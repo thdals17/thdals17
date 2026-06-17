@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>지하철 빈자리 - 눈치 게임</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f0f0f0; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        #game-container { background-color: #fff; width: 400px; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; font-size: 24px; }
+        .stats { display: flex; justify-content: space-between; margin-bottom: 15px; font-weight: bold; }
+        .gauge-container { width: 100%; background-color: #ddd; border-radius: 5px; margin-bottom: 20px; overflow: hidden; }
+        #awkward-bar { height: 20px; width: 0%; background-color: #ff4c4c; transition: width 0.3s; }
+        .seat-area { display: flex; justify-content: space-between; margin-bottom: 20px; }
+        .seat { background-color: #e9ecef; border: 2px solid #ccc; border-radius: 8px; width: 30%; padding: 10px; text-align: center; cursor: pointer; transition: 0.2s; }
+        .seat:hover { border-color: #007bff; background-color: #e2e6ea; }
+        .seat-num { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+        .passenger-state { font-size: 12px; color: #555; height: 40px; }
+        .actions { display: flex; flex-direction: column; gap: 10px; }
+        button { padding: 10px; font-size: 14px; border: none; border-radius: 5px; background-color: #007bff; color: white; cursor: pointer; transition: 0.2s; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .skill-btn { background-color: #28a745; }
+        .skill-btn:hover { background-color: #218838; }
+        #log { margin-top: 20px; padding: 10px; background-color: #f8f9fa; border: 1px solid #ddd; border-radius: 5px; height: 100px; overflow-y: auto; font-size: 12px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h1>🚇 지하철 빈자리</h1>
+    
+    <div class="stats">
+        <span>현재 모드: 일반 (출근길)</span>
+        <span>착석 횟수: <span id="score">0</span></span>
+    </div>
+
+    <div>민망 게이지: <span id="awkward-text">0</span>/100</div>
+    <div class="gauge-container">
+        <div id="awkward-bar"></div>
+    </div>
+
+    <div class="seat-area" id="seats">
+        <!-- Seats will be generated here -->
+    </div>
+
+    <div class="actions">
+        <button onclick="waitAndObserve()" class="skill-btn">자연스러운 흔들림 (대기하며 관찰 / 민망함 -10)</button>
+        <button onclick="usePhoneSkill()" class="skill-btn">폰 집중 스킬 (다음 턴 하차 확률 상승)</button>
+    </div>
+
+    <div id="log">출근길 지하철에 탑승했습니다. 눈치를 살피며 빈자리를 찾으세요!</div>
+</div>
+
+<script>
+    let score = 0;
+    let awkwardness = 0;
+    let gameOver = false;
+
+    const passengerStates = [
+        { text: "눈을 감고 숙면 중", willLeave: false, danger: 30 },
+        { text: "스마트폰으로 유튜브 시청", willLeave: false, danger: 20 },
+        { text: "주위를 두리번거림", willLeave: false, danger: 10 },
+        { text: "가방 지퍼를 닫음", willLeave: true, danger: 0 },
+        { text: "이어폰을 빼서 주머니에 넣음", willLeave: true, danger: 0 },
+        { text: "문 쪽을 힐끗 쳐다봄", willLeave: true, danger: 0 }
+    ];
+
+    let seats = [];
+
+    function initSeats() {
+        seats = [];
+        const seatContainer = document.getElementById('seats');
+        seatContainer.innerHTML = '';
+        
+        for (let i = 0; i < 3; i++) {
+            let state = getRandomState();
+            seats.push(state);
+            
+            const seatDiv = document.createElement('div');
+            seatDiv.className = 'seat';
+            seatDiv.onclick = () => trySit(i);
+            seatDiv.innerHTML = `
+                <div class="seat-num">${i + 1}번 자리</div>
+                <div class="passenger-state">${state.text}</div>
+                <div style="font-size:10px; margin-top:5px; color:#007bff;">[접근하기]</div>
+            `;
+            seatContainer.appendChild(seatDiv);
+        }
+    }
+
+    function getRandomState() {
+        // 30% chance to be a leaving state, 70% to stay
+        const isLeaving = Math.random() < 0.3;
+        const filteredStates = passengerStates.filter(s => s.willLeave === isLeaving);
+        return filteredStates[Math.floor(Math.random() * filteredStates.length)];
+    }
+
+    function updateSeats() {
+        if(gameOver) return;
+        const seatContainer = document.getElementById('seats');
+        seatContainer.innerHTML = '';
+        
+        for (let i = 0; i < 3; i++) {
+            // 40% chance passenger state changes per turn
+            if(Math.random() < 0.4) {
+                seats[i] = getRandomState();
+            }
+            
+            const seatDiv = document.createElement('div');
+            seatDiv.className = 'seat';
+            seatDiv.onclick = () => trySit(i);
+            seatDiv.innerHTML = `
+                <div class="seat-num">${i + 1}번 자리</div>
+                <div class="passenger-state">${seats[i].text}</div>
+                <div style="font-size:10px; margin-top:5px; color:#007bff;">[접근하기]</div>
+            `;
+            seatContainer.appendChild(seatDiv);
+        }
+    }
+
+    function trySit(seatIndex) {
+        if (gameOver) return;
+
+        const target = seats[seatIndex];
+        if (target.willLeave) {
+            addLog(`성공! ${seatIndex + 1}번 승객이 내렸습니다. 자연스럽게 착석했습니다! (민망함 초기화)`);
+            score++;
+            document.getElementById('score').innerText = score;
+            awkwardness = 0;
+            updateGauge();
+            
+            // Check for hidden achievement
+            if (score === 3) {
+                addLog(`🏆 업적 달성: [3연속 자연 착석]`);
+            }
+            
+            // Generate new passengers
+            initSeats();
+        } else {
+            addLog(`실패! ${seatIndex + 1}번 승객은 내릴 생각이 없습니다. 당신의 엉거주춤한 자세에 사람들의 시선이 집중됩니다.`);
+            addAwkwardness(target.danger + 15);
+            updateSeats();
+        }
+    }
+
+    function waitAndObserve() {
+        if (gameOver) return;
+        addLog(`자연스럽게 손잡이를 잡고 몸을 흔들며 대기합니다. (민망함 감소)`);
+        awkwardness = Math.max(0, awkwardness - 10);
+        updateGauge();
+        updateSeats();
+    }
+
+    function usePhoneSkill() {
+        if (gameOver) return;
+        addLog(`스킬 사용: [폰 집중] 다른 승객들이 당신을 덜 신경 씁니다. 빈자리가 생길 확률이 조금 올라갑니다.`);
+        awkwardness = Math.max(0, awkwardness - 5);
+        updateGauge();
+        
+        // Force one seat to potentially prepare to leave
+        if(Math.random() < 0.5) {
+            const leaveStates = passengerStates.filter(s => s.willLeave === true);
+            seats[Math.floor(Math.random() * 3)] = leaveStates[Math.floor(Math.random() * leaveStates.length)];
+        }
+        updateSeats();
+    }
+
+    function addAwkwardness(amount) {
+        awkwardness += amount;
+        updateGauge();
+        if (awkwardness >= 100) {
+            gameOver = true;
+            addLog(`🚨 "너무 티났습니다." 사람들의 따가운 시선을 견디지 못하고 다음 역에서 하차합니다... [게임 오버]`);
+            document.querySelectorAll('button').forEach(btn => btn.disabled = true);
+        }
+    }
+
+    function updateGauge() {
+        if(awkwardness > 100) awkwardness = 100;
+        document.getElementById('awkward-bar').style.width = awkwardness + '%';
+        document.getElementById('awkward-text').innerText = awkwardness;
+        
+        const bar = document.getElementById('awkward-bar');
+        if(awkwardness > 70) bar.style.backgroundColor = '#8b0000'; // Dark red
+        else if (awkwardness > 40) bar.style.backgroundColor = '#ff8c00'; // Orange
+        else bar.style.backgroundColor = '#ff4c4c'; // Red
+    }
+
+    function addLog(msg) {
+        const logDiv = document.getElementById('log');
+        const p = document.createElement('div');
+        p.innerText = `- ${msg}`;
+        logDiv.prepend(p);
+    }
+
+    // Initialize Game
+    initSeats();
+</script>
+
+</body>
+</html>
